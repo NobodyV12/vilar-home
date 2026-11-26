@@ -405,3 +405,39 @@ input {
 .drag-ghost {
   opacity: 0.35;
 }
+
+body.locked {
+  overflow: hidden;
+}
+
+.viewer {
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.fab.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.seconds-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 15px;
+}
+
+.segmented.small {
+  grid-template-columns: repeat(4, auto);
+}
+
+.segmented.small button {
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.loop {
+  margin-top: 12px;
+}

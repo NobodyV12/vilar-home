@@ -47,6 +47,16 @@
           </span>
           <input id="shuffle" type="checkbox" role="switch" />
         </label>
+        <div class="seconds-row">
+          <span>Each picture stays up</span>
+          <div class="segmented small" role="radiogroup" aria-label="Seconds per picture">
+            <button data-seconds="5" role="radio">5s</button>
+            <button data-seconds="10" role="radio">10s</button>
+            <button data-seconds="15" role="radio">15s</button>
+            <button data-seconds="30" role="radio">30s</button>
+          </div>
+        </div>
+        <p class="muted loop" id="loop"></p>
       </section>
 
       <div class="library-head">
