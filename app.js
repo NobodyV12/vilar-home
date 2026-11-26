@@ -252,6 +252,10 @@ $("arrange").addEventListener("click", async () => {
     return;
   }
   {
+    // Always arrange the latest list, never one loaded before someone else changed the order.
+    toast("Loading the latest order…", 0);
+    await load();
+    $("toast").hidden = true;
     if (state.choosing) {
       // Reuse Choose's Back-button entry instead of racing a history.back() with a new pushState.
       endChoosing();
