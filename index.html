@@ -40,11 +40,21 @@
           <button data-bg="scenery" role="radio">Scenery</button>
           <button data-bg="photos" role="radio">Family photos</button>
         </div>
+        <label class="switch-row">
+          <span>
+            Shuffle family photos
+            <small class="muted">Off: they play in the order below.</small>
+          </span>
+          <input id="shuffle" type="checkbox" role="switch" />
+        </label>
       </section>
 
       <div class="library-head">
         <h2>Your pictures</h2>
-        <button id="choose" class="ghost">Choose what's on TV</button>
+        <div class="library-actions">
+          <button id="arrange" class="ghost">Arrange</button>
+          <button id="choose" class="ghost">Choose what's on TV</button>
+        </div>
       </div>
       <nav class="tabs">
         <button data-tab="family" class="active">Family photos <span id="count-family"></span></button>

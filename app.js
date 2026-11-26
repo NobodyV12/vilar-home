@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import Sortable from "https://esm.sh/sortablejs@1.15.6";
 
 // Public by design: Supabase's access rules decide who sees what, not this key.
 const SUPABASE_URL = "https://fpbhxqcxtnumnwombxjm.supabase.co";
@@ -10,7 +11,8 @@ const SIGNED_URL_SECONDS = 60 * 60;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true } });
 const $ = (id) => document.getElementById(id);
-const state = { tab: "family", photos: [], viewing: null, user: null, choosing: false };
+const state = { tab: "family", photos: [], viewing: null, user: null, choosing: false, arranging: false };
+let sortable = null;
 
 const NAMES = {
   "ricardovilar@gmail.com": "Dad",
@@ -77,7 +79,7 @@ document.querySelectorAll("[data-bg]").forEach((button) =>
 
 // ---------- photos ----------
 const TAB_HINTS = {
-  family: "Pictures marked On TV rotate on the TV. Tap one to see it, hide it, or delete it.",
+  family: "In play order, first to last. Tap one to see it, hide it, or delete it. New pictures go to the end.",
   scenery: "One scenery picture marked On TV fills the screen each day.",
 };
 
@@ -91,10 +93,17 @@ document.querySelectorAll("[data-tab]").forEach((button) =>
 
 async function load() {
   const [{ data: settings }, { data: photos, error }] = await Promise.all([
-    supabase.from("tv_home_settings").select("background").single(),
-    supabase.from("tv_home_photos").select("*").order("created_at", { ascending: false }),
+    supabase.from("tv_home_settings").select("background, shuffle").single(),
+    supabase
+      .from("tv_home_photos")
+      .select("*")
+      .order("position", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true }),
   ]);
-  if (settings) paintBackground(settings.background);
+  if (settings) {
+    paintBackground(settings.background);
+    $("shuffle").checked = settings.shuffle;
+  }
   if (error) {
     toast("Couldn't load the pictures.");
     return;
@@ -112,7 +121,11 @@ function render() {
   $("on-count").textContent = list.length ? `${onTv} of ${list.length} on the TV` : "";
   $("count-family").textContent = state.photos.filter((p) => p.kind === "family").length || "";
   $("count-scenery").textContent = state.photos.filter((p) => p.kind === "scenery").length || "";
-  $("tab-hint").textContent = state.choosing ? "Tap pictures to put them on or take them off the TV." : TAB_HINTS[state.tab];
+  $("tab-hint").textContent = state.arranging
+    ? ARRANGE_HINT
+    : state.choosing
+      ? "Tap pictures to put them on or take them off the TV."
+      : TAB_HINTS[state.tab];
   $("empty").hidden = list.length > 0;
   const grid = $("grid");
   grid.replaceChildren(
@@ -128,11 +141,55 @@ function render() {
       badge.className = "badge";
       badge.textContent = photo.shown === false ? "Off TV" : "On TV";
       tile.append(img, badge);
-      tile.addEventListener("click", () => (state.choosing ? toggleShown(photo) : openViewer(photo)));
+      tile.dataset.id = photo.id;
+      tile.addEventListener("click", () => {
+        if (state.arranging) return;
+        if (state.choosing) toggleShown(photo);
+        else openViewer(photo);
+      });
       return tile;
     }),
   );
 }
+
+// ---------- shuffle ----------
+$("shuffle").addEventListener("change", async (event) => {
+  const shuffle = event.target.checked;
+  const { error } = await supabase.from("tv_home_settings").update({ shuffle }).eq("id", 1);
+  if (error) {
+    event.target.checked = !shuffle;
+    return toast("Couldn't change shuffle. Try again.");
+  }
+  toast(shuffle ? "Shuffle on. The TV mixes them up within a minute." : "Shuffle off. The TV plays them in your order.");
+});
+
+// ---------- arrange the play order ----------
+const ARRANGE_HINT = "Press and hold a picture, then drag it to where it should play. Tap Save when done.";
+
+$("arrange").addEventListener("click", async () => {
+  if (!state.arranging) {
+    state.arranging = true;
+    state.choosing = false;
+    $("choose").textContent = "Choose what's on TV";
+    $("choose").classList.remove("on");
+    $("arrange").textContent = "Save order";
+    $("arrange").classList.add("on");
+    $("tab-hint").textContent = ARRANGE_HINT;
+    $("grid").classList.add("arranging");
+    sortable = Sortable.create($("grid"), { animation: 150, delay: 180, delayOnTouchOnly: true, ghostClass: "drag-ghost" });
+    return;
+  }
+  const ids = [...$("grid").children].map((tile) => tile.dataset.id);
+  sortable?.destroy();
+  sortable = null;
+  state.arranging = false;
+  $("arrange").textContent = "Arrange";
+  $("arrange").classList.remove("on");
+  $("grid").classList.remove("arranging");
+  const { error } = await supabase.rpc("tv_home_reorder", { ordered: ids });
+  toast(error ? "Couldn't save the order. Try again." : "Order saved. The TV follows it within a minute (when shuffle is off).");
+  load();
+});
 
 // ---------- on / off the TV ----------
 async function toggleShown(photo) {
@@ -148,10 +205,15 @@ async function toggleShown(photo) {
 }
 
 $("choose").addEventListener("click", () => {
+  if (state.arranging) return toast("Save the order first.");
   state.choosing = !state.choosing;
   $("choose").textContent = state.choosing ? "Done" : "Choose what's on TV";
   $("choose").classList.toggle("on", state.choosing);
-  $("tab-hint").textContent = state.choosing ? "Tap pictures to put them on or take them off the TV." : TAB_HINTS[state.tab];
+  $("tab-hint").textContent = state.arranging
+    ? ARRANGE_HINT
+    : state.choosing
+      ? "Tap pictures to put them on or take them off the TV."
+      : TAB_HINTS[state.tab];
 });
 
 // ---------- viewer / delete ----------
@@ -247,7 +309,7 @@ $("picker").addEventListener("change", async (event) => {
   toast(
     failed
       ? `Added ${done}. ${failed} couldn't be added: ${lastError}`
-      : `Added ${done} picture${done === 1 ? "" : "s"}. They'll show on the TV within a minute.`,
+      : `Added ${done} picture${done === 1 ? "" : "s"}. They're at the end of the list and show on the TV within a minute.`,
     failed ? 9000 : 4000,
   );
   load();
