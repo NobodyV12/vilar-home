@@ -10,7 +10,7 @@ const SIGNED_URL_SECONDS = 60 * 60;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true } });
 const $ = (id) => document.getElementById(id);
-const state = { tab: "family", photos: [], viewing: null, user: null };
+const state = { tab: "family", photos: [], viewing: null, user: null, choosing: false };
 
 const NAMES = {
   "ricardovilar@gmail.com": "Dad",
@@ -53,7 +53,7 @@ supabase.auth.onAuthStateChange((_event, session) => {
   if (state.user) {
     $("who").textContent = "Signed in as " + nameFor(state.user.email);
     show("app");
-    load();
+    setTimeout(load, 0);
   } else {
     show("signin");
   }
@@ -71,14 +71,14 @@ document.querySelectorAll("[data-bg]").forEach((button) =>
       .from("tv_home_settings")
       .update({ background, updated_at: new Date().toISOString() })
       .eq("id", 1);
-    toast(error ? "Couldn't change the TV. Try again." : "The TV will switch in a minute or two.");
+    toast(error ? "Couldn't change the TV. Try again." : "The TV switches within a minute.");
   }),
 );
 
 // ---------- photos ----------
 const TAB_HINTS = {
-  family: "These rotate on the TV. Wide photos fill the screen; tall ones show three across.",
-  scenery: "One of these fills the TV each day.",
+  family: "Pictures marked On TV rotate on the TV. Tap one to see it, hide it, or delete it.",
+  scenery: "One scenery picture marked On TV fills the screen each day.",
 };
 
 document.querySelectorAll("[data-tab]").forEach((button) =>
@@ -108,25 +108,51 @@ async function load() {
 
 function render() {
   const list = state.photos.filter((p) => p.kind === state.tab);
+  const onTv = list.filter((p) => p.shown !== false).length;
+  $("on-count").textContent = list.length ? `${onTv} of ${list.length} on the TV` : "";
   $("count-family").textContent = state.photos.filter((p) => p.kind === "family").length || "";
   $("count-scenery").textContent = state.photos.filter((p) => p.kind === "scenery").length || "";
-  $("tab-hint").textContent = TAB_HINTS[state.tab];
+  $("tab-hint").textContent = state.choosing ? "Tap pictures to put them on or take them off the TV." : TAB_HINTS[state.tab];
   $("empty").hidden = list.length > 0;
   const grid = $("grid");
   grid.replaceChildren(
     ...list.map((photo) => {
       const tile = document.createElement("button");
-      tile.className = "tile" + (photo.height > photo.width ? " tall" : "");
+      tile.className = "tile";
+      tile.dataset.shown = String(photo.shown !== false);
       const img = document.createElement("img");
       img.loading = "lazy";
       img.alt = "";
       if (photo.thumb) img.src = photo.thumb;
-      tile.append(img);
-      tile.addEventListener("click", () => openViewer(photo));
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = photo.shown === false ? "Off TV" : "On TV";
+      tile.append(img, badge);
+      tile.addEventListener("click", () => (state.choosing ? toggleShown(photo) : openViewer(photo)));
       return tile;
     }),
   );
 }
+
+// ---------- on / off the TV ----------
+async function toggleShown(photo) {
+  const shown = photo.shown === false;
+  photo.shown = shown;
+  render();
+  const { error } = await supabase.from("tv_home_photos").update({ shown }).eq("id", photo.id);
+  if (error) {
+    photo.shown = !shown;
+    render();
+    toast("Couldn't change that one. Try again.");
+  }
+}
+
+$("choose").addEventListener("click", () => {
+  state.choosing = !state.choosing;
+  $("choose").textContent = state.choosing ? "Done" : "Choose what's on TV";
+  $("choose").classList.toggle("on", state.choosing);
+  $("tab-hint").textContent = state.choosing ? "Tap pictures to put them on or take them off the TV." : TAB_HINTS[state.tab];
+});
 
 // ---------- viewer / delete ----------
 async function openViewer(photo) {
@@ -134,32 +160,54 @@ async function openViewer(photo) {
   $("viewer-img").src = photo.thumb || "";
   const added = new Date(photo.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   $("viewer-meta").textContent = "Added " + added + (photo.added_by ? " by " + nameFor(photo.added_by) : "");
+  $("viewer-toggle").textContent = photo.shown === false ? "Show on TV" : "Take off TV";
   $("viewer").hidden = false;
   const { data } = await supabase.storage.from(BUCKET).createSignedUrl(photo.path, SIGNED_URL_SECONDS);
   if (data && state.viewing === photo) $("viewer-img").src = data.signedUrl;
 }
+$("viewer-toggle").addEventListener("click", async () => {
+  if (!state.viewing) return;
+  await toggleShown(state.viewing);
+  $("viewer-toggle").textContent = state.viewing.shown === false ? "Show on TV" : "Take off TV";
+});
 $("viewer-close").addEventListener("click", () => ($("viewer").hidden = true));
 $("viewer-delete").addEventListener("click", async () => {
   const photo = state.viewing;
-  if (!photo || !confirm("Remove this picture from the TV?")) return;
+  if (!photo || !confirm("Delete this picture for good? (To just hide it, use Take off TV.)")) return;
   const { error } = await supabase.from("tv_home_photos").delete().eq("id", photo.id);
   if (error) return toast("Couldn't remove it. Try again.");
   await supabase.storage.from(BUCKET).remove([photo.path, "thumbs/" + photo.path]);
   state.photos = state.photos.filter((p) => p.id !== photo.id);
   $("viewer").hidden = true;
   render();
-  toast("Removed. The TV will drop it in a few minutes.");
+  toast("Deleted. The TV drops it within a minute.");
 });
 
 // ---------- upload ----------
-const shrink = async (file, edge, quality) => {
-  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+const decode = async (file) => {
+  try {
+    // Decoding at reduced width keeps 50-200 MP phone photos from running out of memory.
+    return await createImageBitmap(file, { imageOrientation: "from-image", resizeWidth: 2400, resizeQuality: "high" });
+  } catch {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      return img;
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    }
+  }
+};
+
+const shrink = async (source, edge, quality) => {
+  const bitmap = source;
   const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
   canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close?.();
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
   return { blob, width: canvas.width, height: canvas.height };
 };
@@ -171,11 +219,14 @@ $("picker").addEventListener("change", async (event) => {
   const kind = state.tab;
   let done = 0;
   let failed = 0;
+  let lastError = "";
   for (const file of files) {
     toast(`Adding ${done + failed + 1} of ${files.length}…`, 0);
     try {
-      const full = await shrink(file, TV_EDGE, 0.85);
-      const thumb = await shrink(file, THUMB_EDGE, 0.78);
+      const picture = await decode(file);
+      const full = await shrink(picture, TV_EDGE, 0.85);
+      const thumb = await shrink(picture, THUMB_EDGE, 0.78);
+      picture.close?.();
       const path = `${kind}/${crypto.randomUUID()}.jpg`;
       const store = supabase.storage.from(BUCKET);
       const up1 = await store.upload(path, full.blob, { contentType: "image/jpeg" });
@@ -190,13 +241,14 @@ $("picker").addEventListener("change", async (event) => {
     } catch (error) {
       console.error(error);
       failed += 1;
+      lastError = error?.message || String(error);
     }
   }
   toast(
     failed
-      ? `Added ${done}. ${failed} couldn't be added (unsupported picture type?).`
-      : `Added ${done} picture${done === 1 ? "" : "s"}. They'll show on the TV in a few minutes.`,
-    4000,
+      ? `Added ${done}. ${failed} couldn't be added: ${lastError}`
+      : `Added ${done} picture${done === 1 ? "" : "s"}. They'll show on the TV within a minute.`,
+    failed ? 9000 : 4000,
   );
   load();
 });

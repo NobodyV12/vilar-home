@@ -288,3 +288,51 @@ input {
   box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
   z-index: 20;
 }
+
+.library-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.library-head h2 {
+  margin: 0;
+}
+
+#choose.on {
+  background: var(--accent);
+  color: #111;
+}
+
+.on-count {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.tile {
+  position: relative;
+}
+
+.tile[data-shown="false"] img {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.badge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgb(0 0 0 / 60%);
+  color: #fff;
+}
+
+.tile[data-shown="false"] .badge {
+  background: rgb(255 255 255 / 85%);
+  color: #111;
+}

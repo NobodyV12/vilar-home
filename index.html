@@ -35,18 +35,23 @@
       </header>
 
       <section class="card">
-        <h2>The TV shows</h2>
+        <h2>Right now the TV shows</h2>
         <div class="segmented" role="radiogroup" aria-label="TV background">
           <button data-bg="scenery" role="radio">Scenery</button>
           <button data-bg="photos" role="radio">Family photos</button>
         </div>
       </section>
 
+      <div class="library-head">
+        <h2>Your pictures</h2>
+        <button id="choose" class="ghost">Choose what's on TV</button>
+      </div>
       <nav class="tabs">
         <button data-tab="family" class="active">Family photos <span id="count-family"></span></button>
         <button data-tab="scenery">Scenery <span id="count-scenery"></span></button>
       </nav>
       <p class="muted hint" id="tab-hint"></p>
+      <p class="on-count" id="on-count"></p>
 
       <div id="grid" class="grid"></div>
       <p id="empty" class="muted empty" hidden>No pictures yet. Tap + to add some.</p>
@@ -63,7 +68,8 @@
         <p class="muted" id="viewer-meta"></p>
         <div class="viewer-actions">
           <button id="viewer-close" class="ghost">Close</button>
-          <button id="viewer-delete" class="danger">Remove from TV</button>
+          <button id="viewer-toggle" class="ghost">Take off TV</button>
+          <button id="viewer-delete" class="danger">Delete</button>
         </div>
       </div>
     </div>
